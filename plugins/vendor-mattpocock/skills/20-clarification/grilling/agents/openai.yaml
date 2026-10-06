@@ -1,6 +1,0 @@
-interface:
-  display_name: "grilling"
-  short_description: "通过逐轮提问澄清方案与关键决策"
-  default_prompt: "Use $vendor-mattpocock:grilling for this task."
-policy:
-  allow_implicit_invocation: true

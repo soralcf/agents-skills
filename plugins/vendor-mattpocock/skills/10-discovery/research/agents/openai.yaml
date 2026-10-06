@@ -1,6 +1,0 @@
-interface:
-  display_name: "research"
-  short_description: "查阅一手资料并形成有来源的研究记录"
-  default_prompt: "Use $vendor-mattpocock:research for this task."
-policy:
-  allow_implicit_invocation: true

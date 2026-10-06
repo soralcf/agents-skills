@@ -1,6 +1,0 @@
-interface:
-  display_name: "triage"
-  short_description: "验证请求并整理可执行的任务说明"
-  default_prompt: "Use $vendor-mattpocock:triage for this task."
-policy:
-  allow_implicit_invocation: false

@@ -1,6 +1,0 @@
-interface:
-  display_name: "writing-for-agents"
-  short_description: "改善 agent 文档的触发条件、结构与完成标准"
-  default_prompt: "Use $vendor-mattpocock:writing-for-agents for this task."
-policy:
-  allow_implicit_invocation: true

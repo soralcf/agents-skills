@@ -1,6 +1,0 @@
-interface:
-  display_name: "implement"
-  short_description: "依据规格或任务实现、检查、审查并提交"
-  default_prompt: "Use $vendor-mattpocock:implement for this task."
-policy:
-  allow_implicit_invocation: false

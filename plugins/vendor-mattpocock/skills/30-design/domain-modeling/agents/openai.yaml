@@ -1,6 +1,0 @@
-interface:
-  display_name: "domain-modeling"
-  short_description: "维护领域术语、上下文与架构决策记录"
-  default_prompt: "Use $vendor-mattpocock:domain-modeling for this task."
-policy:
-  allow_implicit_invocation: true

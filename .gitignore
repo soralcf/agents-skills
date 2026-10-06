@@ -1,0 +1,4 @@
+# Generated Agent Plugins packages (rebuild with: skill_manager.py build)
+dist/
+__pycache__/
+*.pyc

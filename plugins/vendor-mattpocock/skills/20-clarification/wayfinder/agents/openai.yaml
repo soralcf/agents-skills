@@ -1,6 +1,0 @@
-interface:
-  display_name: "wayfinder"
-  short_description: "维护跨会话决策地图，逐步消除不确定性"
-  default_prompt: "Use $vendor-mattpocock:wayfinder for this task."
-policy:
-  allow_implicit_invocation: false

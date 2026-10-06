@@ -1,6 +1,0 @@
-interface:
-  display_name: "grill-with-docs"
-  short_description: "澄清设计并同步沉淀术语和架构决定"
-  default_prompt: "Use $vendor-mattpocock:grill-with-docs for this task."
-policy:
-  allow_implicit_invocation: false

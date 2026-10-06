@@ -1,6 +1,0 @@
-interface:
-  display_name: "codebase-design"
-  short_description: "设计深模块、接口与可测试的边界"
-  default_prompt: "Use $vendor-mattpocock:codebase-design for this task."
-policy:
-  allow_implicit_invocation: true

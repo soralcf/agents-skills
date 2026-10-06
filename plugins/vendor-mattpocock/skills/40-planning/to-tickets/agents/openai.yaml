@@ -1,6 +1,0 @@
-interface:
-  display_name: "to-tickets"
-  short_description: "将规格拆成可验证的纵向切片与依赖图"
-  default_prompt: "Use $vendor-mattpocock:to-tickets for this task."
-policy:
-  allow_implicit_invocation: false

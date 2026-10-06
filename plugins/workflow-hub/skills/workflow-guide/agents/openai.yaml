@@ -1,7 +1,0 @@
-interface:
-  display_name: "Workflow Guide"
-  short_description: "Navigate and audit the personal skill library"
-  default_prompt: "Use $workflow-guide to choose or inspect one of my maintained workflows."
-
-policy:
-  allow_implicit_invocation: false

@@ -1,6 +1,0 @@
-interface:
-  display_name: "resolving-merge-conflicts"
-  short_description: "按双方意图解决合并与变基冲突"
-  default_prompt: "Use $vendor-mattpocock:resolving-merge-conflicts for this task."
-policy:
-  allow_implicit_invocation: true

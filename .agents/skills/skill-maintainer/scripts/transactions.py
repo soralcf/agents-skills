@@ -8,6 +8,10 @@ import shutil
 import tempfile
 
 
+# Every path an applied maintenance command is allowed to rewrite.
+MANAGED_PATHS = ('.agents/skills', '.agents/plugins', 'registry')
+
+
 def transactional(function):
     @functools.wraps(function)
     def wrapped(catalog, *args, **kwargs):
@@ -23,14 +27,14 @@ def transactional(function):
                     json.loads(catalog.workflows_path.read_text()) != catalog.workflows_doc):
                 raise RuntimeError('Registry changed; reload the catalog before applying')
             backup = Path(tempfile.mkdtemp(prefix='skill-maintenance-backup-'))
-            for name in ('plugins', 'registry'):
+            for name in MANAGED_PATHS:
                 shutil.copytree(catalog.root / name, backup / name)
             catalog._transaction = True
             try:
                 result = function(catalog, *args, **kwargs)
             except BaseException:
                 try:
-                    for name in ('plugins', 'registry'):
+                    for name in MANAGED_PATHS:
                         shutil.rmtree(catalog.root / name)
                         shutil.copytree(backup / name, catalog.root / name)
                     catalog.__init__(catalog.root)

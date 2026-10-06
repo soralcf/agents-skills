@@ -1,0 +1,38 @@
+{
+  "name": "workflow-hub",
+  "version": "0.1.1",
+  "description": "Navigate, understand, and audit Welkin's personal skill workflows.",
+  "author": {
+    "name": "Welkin",
+    "url": "https://github.com/soralcf"
+  },
+  "homepage": "https://github.com/soralcf/agents-skills/tree/main/.agents/plugins/workflow-hub",
+  "repository": "https://github.com/soralcf/agents-skills",
+  "keywords": [
+    "workflow",
+    "routing",
+    "skills",
+    "catalog"
+  ],
+  "extensions": {
+    "org.soralcf.presentation": {
+      "displayName": "Workflow Hub",
+      "shortDescription": "Navigate and audit the personal skill library.",
+      "longDescription": "A human-invoked guide that maps goals to installed skills, explains how workflows compose, and identifies gaps or overlap without mutating the library.",
+      "developerName": "Welkin",
+      "category": "Productivity",
+      "capabilities": [
+        "Workflow Navigation",
+        "Skill Audit"
+      ],
+      "defaultPrompt": [
+        "Show me which workflow fits my current task",
+        "Explain how my engineering skills work together",
+        "Audit my skill library for overlap or missing links"
+      ]
+    }
+  },
+  "skills": [
+    "workflow-guide"
+  ]
+}

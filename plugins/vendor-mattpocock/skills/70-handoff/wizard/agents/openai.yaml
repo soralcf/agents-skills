@@ -1,6 +1,0 @@
-interface:
-  display_name: "wizard"
-  short_description: "为必须由人完成的操作生成交互向导"
-  default_prompt: "Use $vendor-mattpocock:wizard for this task."
-policy:
-  allow_implicit_invocation: true

@@ -1,7 +1,0 @@
-interface:
-  display_name: "Learn Anything"
-  short_description: "Learn any topic with adaptive explanations and practice"
-  default_prompt: "Use $learn-anything to teach me a topic I provide."
-
-policy:
-  allow_implicit_invocation: true

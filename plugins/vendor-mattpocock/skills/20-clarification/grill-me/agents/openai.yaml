@@ -1,6 +1,0 @@
-interface:
-  display_name: "grill-me"
-  short_description: "进入 grilling 的显式提问入口"
-  default_prompt: "Use $vendor-mattpocock:grill-me for this task."
-policy:
-  allow_implicit_invocation: false

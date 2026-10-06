@@ -1,6 +1,0 @@
-interface:
-  display_name: "prototype"
-  short_description: "用可丢弃原型验证设计问题"
-  default_prompt: "Use $vendor-mattpocock:prototype for this task."
-policy:
-  allow_implicit_invocation: true

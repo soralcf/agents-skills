@@ -1,0 +1,40 @@
+{
+  "name": "learn-anything",
+  "version": "0.1.0",
+  "description": "Learn any topic through adaptive explanations, guided practice, and practical roadmaps.",
+  "author": {
+    "name": "Welkin",
+    "url": "https://github.com/soralcf"
+  },
+  "homepage": "https://github.com/soralcf/agents-skills/tree/main/.agents/plugins/learn-anything",
+  "repository": "https://github.com/soralcf/agents-skills",
+  "keywords": [
+    "learning",
+    "study",
+    "explanation",
+    "roadmap",
+    "notes"
+  ],
+  "extensions": {
+    "org.soralcf.presentation": {
+      "displayName": "Learn Anything",
+      "shortDescription": "Learn any topic with adaptive explanations and practice.",
+      "longDescription": "Build a useful mental model through a quick explanation, guided deep dive, or learning roadmap adapted to your goals, prior knowledge, and preferred language.",
+      "developerName": "Welkin",
+      "category": "Education",
+      "capabilities": [
+        "Learning",
+        "Research"
+      ],
+      "icon": "./assets/icon.png",
+      "defaultPrompt": [
+        "Help me understand a topic from first principles",
+        "Build a learning roadmap for a subject I want to study",
+        "Teach me a practical skill with a small exercise"
+      ]
+    }
+  },
+  "skills": [
+    "learn-anything"
+  ]
+}

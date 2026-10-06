@@ -1,6 +1,0 @@
-interface:
-  display_name: "to-questionnaire"
-  short_description: "为掌握缺失信息的人生成异步问卷"
-  default_prompt: "Use $vendor-mattpocock:to-questionnaire for this task."
-policy:
-  allow_implicit_invocation: false

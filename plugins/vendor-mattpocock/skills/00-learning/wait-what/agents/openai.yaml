@@ -1,6 +1,0 @@
-interface:
-  display_name: "wait-what"
-  short_description: "补充背景并用项目术语重新解释"
-  default_prompt: "Use $vendor-mattpocock:wait-what for this task."
-policy:
-  allow_implicit_invocation: false

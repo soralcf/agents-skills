@@ -1,6 +1,0 @@
-interface:
-  display_name: "diagnosing-bugs"
-  short_description: "复现故障、定位原因并建立可靠反馈环"
-  default_prompt: "Use $vendor-mattpocock:diagnosing-bugs for this task."
-policy:
-  allow_implicit_invocation: true

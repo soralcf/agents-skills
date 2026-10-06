@@ -1,0 +1,61 @@
+{
+  "name": "vendor-mattpocock",
+  "version": "0.1.0",
+  "description": "23 Matt Pocock skills organized by work stage, with unchanged skill content and no client-specific overlays.",
+  "author": {
+    "name": "Matt Pocock; packaged by Welkin",
+    "url": "https://github.com/mattpocock/skills"
+  },
+  "homepage": "https://github.com/soralcf/agents-skills/tree/main/.agents/plugins/vendor-mattpocock",
+  "repository": "https://github.com/soralcf/agents-skills",
+  "license": "MIT",
+  "keywords": [
+    "engineering",
+    "workflow",
+    "skills",
+    "vendored"
+  ],
+  "extensions": {
+    "org.soralcf.presentation": {
+      "displayName": "Matt Pocock Skills",
+      "shortDescription": "Matt skills by work stage, for any Agent Skills client.",
+      "longDescription": "23 pinned MIT-licensed Matt Pocock skills, one copy each under .agents/skills/ and grouped into nine numbered stages. Upstream files ship verbatim apart from the Codex-only agents/openai.yaml overlay, which is excluded and recorded in UPSTREAM.lock.json.",
+      "developerName": "Matt Pocock / Welkin",
+      "category": "Developer Tools",
+      "capabilities": [
+        "Engineering",
+        "Productivity"
+      ],
+      "defaultPrompt": [
+        "Diagnose a difficult bug with a disciplined feedback loop",
+        "Stress-test a design before implementation",
+        "Review a codebase for deeper module seams"
+      ]
+    }
+  },
+  "skills": [
+    "teach",
+    "wait-what",
+    "research",
+    "triage",
+    "diagnosing-bugs",
+    "wayfinder",
+    "grilling",
+    "grill-me",
+    "grill-with-docs",
+    "to-questionnaire",
+    "domain-modeling",
+    "codebase-design",
+    "improve-codebase-architecture",
+    "prototype",
+    "to-spec",
+    "to-tickets",
+    "implement",
+    "tdd",
+    "code-review",
+    "resolving-merge-conflicts",
+    "handoff",
+    "wizard",
+    "writing-for-agents"
+  ]
+}

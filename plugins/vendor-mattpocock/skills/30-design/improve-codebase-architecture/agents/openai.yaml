@@ -1,6 +1,0 @@
-interface:
-  display_name: "improve-codebase-architecture"
-  short_description: "探索架构改进候选并展示前后对比"
-  default_prompt: "Use $vendor-mattpocock:improve-codebase-architecture for this task."
-policy:
-  allow_implicit_invocation: false

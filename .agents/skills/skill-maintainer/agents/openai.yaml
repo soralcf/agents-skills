@@ -1,7 +1,0 @@
-interface:
-  display_name: "Skill Maintainer"
-  short_description: "Maintain vendored and original skill workflows"
-  default_prompt: "Use $skill-maintainer to audit or update this skill marketplace safely."
-
-policy:
-  allow_implicit_invocation: true

@@ -1,6 +1,0 @@
-interface:
-  display_name: "teach"
-  short_description: "持续教学：学习目标、资源、课程与学习记录"
-  default_prompt: "Use $vendor-mattpocock:teach for this task."
-policy:
-  allow_implicit_invocation: false

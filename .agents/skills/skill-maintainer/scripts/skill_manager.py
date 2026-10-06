@@ -1,5 +1,17 @@
 #!/usr/bin/env python3
-"""Validate and synchronize the skill catalog without third-party patches."""
+"""Validate the .agents skill catalog and build vendor-neutral plugin packages.
+
+Source of truth:
+  .agents/skills/<name>/SKILL.md   every skill, exactly one copy, Agent Skills layout
+  .agents/plugins/<group>/         group definition (package.json) plus shared files
+  registry/skills.json             catalog metadata, ownership, upstream pins
+  registry/workflows.json          maintained task routes
+
+Generated:
+  dist/<group>/                    Agent Plugins 1.0 package (gitignored)
+  .agents/skills/workflow-guide/references/catalog.md
+  .agents/plugins/<group>/README.md
+"""
 
 from __future__ import annotations
 
@@ -14,10 +26,41 @@ import subprocess
 import sys
 import tempfile
 import uuid
+
 from transactions import transactional
 
 
 DEFAULT_ROOT = Path(__file__).resolve().parents[4]
+
+SKILLS_DIR = ".agents/skills"
+GROUPS_DIR = ".agents/plugins"
+DIST_DIR = "dist"
+CATALOG_PATH = Path(SKILLS_DIR) / "workflow-guide/references/catalog.md"
+
+PLUGIN_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
+PLUGIN_NAME = re.compile(r"^(?!.*(?:--|\.\.))[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$")
+SKILL_NAME = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+NAMESPACE = re.compile(r"^[a-z0-9]+(?:\.[a-z0-9-]+)+$")
+SEMVER = re.compile(r"^\d+\.\d+\.\d+$")
+
+PLUGIN_KEYS = frozenset({
+    "$schema", "name", "version", "description", "author", "homepage",
+    "repository", "license", "keywords", "extensions",
+})
+AUTHOR_KEYS = frozenset({"name", "email", "url"})
+OWNERSHIPS = frozenset({"original", "vendored"})
+SCOPES = frozenset({"plugin", "repository"})
+INVOCATIONS = frozenset({"user", "model"})
+RELATION_TYPES = frozenset({"sequence", "optional", "calls", "choice", "alongside"})
+RELATION_LABELS = {
+    "sequence": "下一步", "optional": "按需进入", "calls": "内部调用",
+    "choice": "替代入口", "alongside": "同时配合",
+}
+
+# Upstream ships its own Codex overlay; vendored trees are pinned without it.
+VENDOR_EXCLUDED_PATHS = ("agents/openai.yaml",)
+# Maintenance-only files that never ship inside a generated package.
+PACKAGE_EXCLUDED_NAMES = frozenset({"package.json", "UPSTREAM.lock.json"})
 
 
 def load_json(path: Path):
@@ -35,65 +78,67 @@ def atomic_json(path: Path, value) -> None:
         temporary.unlink(missing_ok=True)
 
 
-def tree_digest(directory: Path, exclude: tuple[str, ...] = (), overrides: dict | None = None) -> str:
+def tree_digest(directory: Path, exclude: tuple[str, ...] = ()) -> str:
     digest = hashlib.sha256()
     for path in sorted(item for item in directory.rglob("*") if item.is_file()):
-        if path.relative_to(directory).as_posix() in exclude:
+        relative = path.relative_to(directory).as_posix()
+        if relative in exclude:
             continue
-        relative = path.relative_to(directory).as_posix().encode()
-        digest.update(relative)
+        digest.update(relative.encode())
         digest.update(b"\0")
-        digest.update((overrides or {}).get(path.relative_to(directory).as_posix(), path.read_bytes()))
+        digest.update(path.read_bytes())
         digest.update(b"\0")
     return digest.hexdigest()
 
 
-def codex_overlay(item: dict) -> str:
-    """Add host metadata without rewriting any upstream file."""
-    metadata = item["codex"]
-    return (
-        "interface:\n"
-        f"  display_name: {json.dumps(metadata['displayName'], ensure_ascii=False)}\n"
-        f"  short_description: {json.dumps(metadata['shortDescription'], ensure_ascii=False)}\n"
-        f"  default_prompt: {json.dumps('Use $vendor-mattpocock:' + item['name'] + ' for this task.')}\n"
-        "policy:\n"
-        f"  allow_implicit_invocation: {'false' if item['invocation'] == 'user' else 'true'}\n"
-    )
+def unpack_scalar(value: str) -> str:
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+        inner = value[1:-1]
+        if value[0] == '"':
+            return inner.replace('\\"', '"').replace("\\\\", "\\")
+        return inner.replace("''", "'")
+    return value
 
 
-def plugin_version(plugin_root: Path) -> str:
-    manifest = load_json(plugin_root / '.codex-plugin/plugin.json')
-    base = manifest['version'].split('+')[0]
-    manifest['version'] = base
-    normalized = json.dumps(manifest, sort_keys=True, separators=(',', ':')).encode()
-    digest = tree_digest(plugin_root, overrides={'.codex-plugin/plugin.json': normalized})
-    return f'{base}+content.{digest[:16]}'
-
-
-def refresh_versions(catalog: 'Catalog') -> None:
-    for plugin_root in sorted((catalog.root / 'plugins').iterdir()):
-        path = plugin_root / '.codex-plugin/plugin.json'
-        if not path.is_file():
+def parse_frontmatter(skill_file: Path) -> dict:
+    """Parse the flat YAML subset used by Agent Skills frontmatter."""
+    lines = skill_file.read_text(encoding="utf-8").splitlines()
+    if not lines or lines[0].strip() != "---":
+        return {}
+    try:
+        end = lines.index("---", 1)
+    except ValueError:
+        return {}
+    fields: dict[str, str] = {}
+    key: str | None = None
+    literal = False
+    for raw in lines[1:end]:
+        if not raw.strip() or raw.lstrip().startswith("#"):
             continue
-        manifest = load_json(path)
-        manifest['version'] = plugin_version(plugin_root)
-        atomic_json(path, manifest)
+        if raw[0] in " \t":
+            if key and fields[key]:
+                fields[key] += ("\n" if literal else " ") + raw.strip()
+            elif key:
+                fields[key] = raw.strip()
+            continue
+        match = re.match(r"^([A-Za-z0-9_.-]+)\s*:\s*(.*)$", raw)
+        if not match:
+            continue
+        key, value = match.group(1), match.group(2).strip()
+        if value in ("", ">", ">-", ">+", "|", "|-", "|+"):
+            literal = value.startswith("|")
+            fields[key] = ""
+        else:
+            literal = False
+            fields[key] = unpack_scalar(value)
+    return fields
 
 
-def skill_relative_path(catalog: 'Catalog', item: dict) -> Path:
-    base = Path('plugins') / item['plugin'] / 'skills'
-    relative = Path(item['path']).relative_to(base)
-    if '..' in relative.parts or relative.name != item['name']:
-        raise ValueError(f"invalid skill path: {item['path']}")
-    return relative
-
-
-def frontmatter_name(skill_dir: Path) -> str | None:
-    skill_file = skill_dir / "SKILL.md"
+def frontmatter_name(directory: Path) -> str | None:
+    skill_file = directory / "SKILL.md"
     if not skill_file.is_file():
         return None
-    match = re.search(r"(?m)^name:\s*[\"']?([^\"'\n]+)[\"']?\s*$", skill_file.read_text(encoding="utf-8"))
-    return match.group(1).strip() if match else None
+    return parse_frontmatter(skill_file).get("name")
 
 
 def run(command: list[str], cwd: Path | None = None) -> str:
@@ -128,6 +173,66 @@ class Catalog:
     def save_skills(self) -> None:
         atomic_json(self.skills_path, self.skills_doc)
 
+    # -- groups -----------------------------------------------------------
+    def group_names(self) -> list[str]:
+        base = self.root / GROUPS_DIR
+        if not base.is_dir():
+            return []
+        return sorted(path.name for path in base.iterdir() if path.is_dir())
+
+    def package_path(self, group: str) -> Path:
+        return self.root / GROUPS_DIR / group / "package.json"
+
+    def package(self, group: str) -> dict:
+        return load_json(self.package_path(group))
+
+    def save_package(self, group: str, manifest: dict) -> None:
+        atomic_json(self.package_path(group), manifest)
+
+    def group_skills(self, group: str) -> list[dict]:
+        return [item for item in self.skills_doc["skills"] if item.get("plugin") == group]
+
+    def plugins(self) -> dict[str, dict]:
+        return {name: self.package(name) for name in self.group_names()}
+
+
+def packaged_digest(catalog: Catalog, group: str) -> str:
+    """Content digest of a group's skills, independent of the manifest itself."""
+    digest = hashlib.sha256()
+    for item in sorted(catalog.group_skills(group), key=lambda value: value["name"]):
+        digest.update(item["name"].encode())
+        digest.update(b"\0")
+        digest.update(tree_digest(catalog.root / item["path"]).encode())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def plugin_manifest(catalog: Catalog, group: str) -> dict:
+    """Derive the Agent Plugins 1.0 plugin.json for a group."""
+    manifest = catalog.package(group)
+    base = str(manifest.get("version", "0.0.0")).split("+")[0]
+    plugin = {
+        "$schema": PLUGIN_SCHEMA,
+        "name": group,
+        "version": f"{base}+content.{packaged_digest(catalog, group)[:16]}",
+    }
+    for key, value in manifest.items():
+        if key in ("name", "version", "skills"):
+            continue
+        plugin[key] = value
+    return plugin
+
+
+def stage_guide_target(catalog: Catalog) -> Path | None:
+    owners = {item["plugin"] for item in catalog.skills_doc["skills"] if item.get("stage")}
+    if not owners:
+        return None
+    if len(owners) != 1:
+        raise ValueError("staged skills span several groups: " + ", ".join(sorted(owners)))
+    return catalog.root / GROUPS_DIR / owners.pop() / "README.md"
+
+
+# -- rendering ------------------------------------------------------------
 
 def render_catalog(catalog: Catalog) -> str:
     source_locks = {}
@@ -149,20 +254,42 @@ def render_catalog(catalog: Catalog) -> str:
             f"### {workflow['title']}",
             "",
             f"- ID: `{workflow['id']}`",
-            "- Entry: " + ' / '.join(f"`${name}`" for name in workflow.get('entries', [workflow['entry']])),
+            "- Entry: " + " / ".join(f"`${name}`" for name in workflow.get("entries", [workflow["entry"]])),
             f"- Outcome: {workflow['outcome']}",
         ])
-        labels = {'sequence': '下一步', 'optional': '按需进入', 'calls': '内部调用', 'choice': '替代入口', 'alongside': '同时配合'}
-        for relation in workflow.get('relations', []):
-            condition = f"（{relation['when']}）" if relation.get('when') else ''
-            lines.append(f"- `{relation['from']}` — {labels.get(relation['type'], relation['type'])}{condition}：`{relation['to']}`")
-        lines.append('')
+        for relation in workflow.get("relations", []):
+            condition = f"（{relation['when']}）" if relation.get("when") else ""
+            label = RELATION_LABELS.get(relation["type"], relation["type"])
+            lines.append(f"- `{relation['from']}` — {label}{condition}：`{relation['to']}`")
+        lines.append("")
 
-    lines.extend(["## Matt stage navigation", "", "Stage numbers are navigation, not mandatory execution order. See the Matt plugin's README.md and PROJECT-SETUP.md for routes and project prerequisites.", ""])
-    for stage in catalog.skills_doc.get('stages', []):
-        members = [item for item in catalog.skills_doc['skills'] if item.get('stage') == stage['id']]
-        lines.append(f"- **{stage['id']} — {stage['title']}**: " + ', '.join(f"`{item['name']}`" for item in members))
-    lines.extend(["", "## Skills", "", "| Skill | Invocation | Ownership | Source |", "|---|---|---|---|"])
+    lines.extend([
+        "## Packages",
+        "",
+        "Every skill lives once under `.agents/skills/`. A group only names the skills it",
+        "publishes; `skill_manager.py build` emits the Agent Plugins package into `dist/`.",
+        "",
+        "| Group | Version | Skills |",
+        "|---|---|---|",
+    ])
+    for group in catalog.group_names():
+        manifest = catalog.package(group)
+        members = ", ".join(f"`{item['name']}`" for item in sorted(catalog.group_skills(group), key=lambda value: value["name"]))
+        lines.append(f"| `{group}` | {manifest.get('version', '?')} | {members} |")
+    lines.append("")
+
+    lines.extend([
+        "## Stage navigation",
+        "",
+        "Stage numbers are navigation, not mandatory execution order."
+        " See the staged group's README.md and PROJECT-SETUP.md for routes and project prerequisites.",
+        "",
+    ])
+    for stage in catalog.skills_doc.get("stages", []):
+        members = [item for item in catalog.skills_doc["skills"] if item.get("stage") == stage["id"]]
+        lines.append(f"- **{stage['id']} — {stage['title']}**: " + ", ".join(f"`{item['name']}`" for item in members))
+
+    lines.extend(["", "## Skills", "", "| Skill | Group | Invocation | Ownership | Source |", "|---|---|---|---|---|"])
     for item in sorted(catalog.skills_doc["skills"], key=lambda value: value["name"]):
         origin = item.get("origin")
         if origin:
@@ -172,7 +299,8 @@ def render_catalog(catalog: Catalog) -> str:
         else:
             source_text = "this repository"
         lines.append(
-            f"| `{item['name']}` | {item['invocation']} | {item['ownership']} | {source_text} |"
+            f"| `{item['name']}` | `{item.get('plugin') or '—'}` | {item['invocation']} |"
+            f" {item['ownership']} | {source_text} |"
         )
 
     exclusions = []
@@ -202,194 +330,327 @@ def render_catalog(catalog: Catalog) -> str:
 
 
 def render_stage_guide(catalog: Catalog) -> str:
-    lines = ['# Matt Pocock Skills：按工作阶段选择', '',
-             '> 从 registry/skills.json 生成。编号表示常用阶段，不是必须依次执行的步骤。', '',
-             '每个 skill 仅保存一份；学习、领域建模、测试、交接可以在任何阶段按需进入。', '',
-             '先看 [常用路线](WORKFLOWS.md)，需要 tracker 的项目先看 [项目接入](PROJECT-SETUP.md)。', '',
-             '上游 SKILL.md、配套文档、脚本与资源保持原样。仅 agents/openai.yaml 作 Codex 适配；原始 YAML 保存在 UPSTREAM.lock.json，原始树与打包树分别校验。', '']
-    for stage in catalog.skills_doc.get('stages', []):
-        lines += [f"## {stage['id']} · {stage['title']}", '', '| Skill | 任务类型 | 调用方式 |', '|---|---|---|']
-        for item in catalog.selected('mattpocock'):
-            if item.get('stage') != stage['id']: continue
-            path = skill_relative_path(catalog, item).as_posix()
-            mode = '显式调用' if item['invocation'] == 'user' else '自动匹配或显式调用'
-            lines.append(f"| [{item['name']}](skills/{path}/SKILL.md) | {item['codex']['shortDescription']} | {mode} |")
-        lines.append('')
-    lines += ['## 技能依赖与项目先决条件', '', '这些是运行时调用依赖，不代表用户需要提前手动执行。分支使用的技能列入依赖，以便安装和移除检查保证流程完整。', '', '| Skill | 调用依赖 | 项目前提 |', '|---|---|---|']
-    for item in catalog.selected('mattpocock'):
-        if item.get('requires') or item.get('prerequisites'):
-            lines.append(f"| `{item['name']}` | {', '.join('`'+n+'`' for n in item.get('requires', [])) or '—'} | {'; '.join(item.get('prerequisites', [])) or '—'} |")
-    lines += ['', '依赖 setup-matt-pocock-skills 的配置要求由项目接入文档说明；该 setup skill 未安装。YAML 不能替代项目配置，也不改变上游发布、提交或教学产物行为。', '']
-    return '\n'.join(lines)
+    lines = [
+        "# Matt Pocock Skills：按工作阶段选择",
+        "",
+        "> 从 registry/skills.json 生成。编号表示常用阶段，不是必须依次执行的步骤。",
+        "",
+        "每个 skill 只有一份，位于 `.agents/skills/<name>/`；学习、领域建模、测试、交接可以在任何阶段按需进入。",
+        "",
+        "先看 [常用路线](WORKFLOWS.md)，需要 tracker 的项目先看 [项目接入](PROJECT-SETUP.md)。",
+        "",
+        "上游文件保持原样，只移除上游自带的 Codex 专用 `agents/openai.yaml`。",
+        "上游整树摘要与打包树摘要分别记录在 UPSTREAM.lock.json，可逐项复核。",
+        "",
+    ]
+    for stage in catalog.skills_doc.get("stages", []):
+        lines += [f"## {stage['id']} · {stage['title']}", "", "| Skill | 任务类型 | 调用方式 |", "|---|---|---|"]
+        for item in catalog.selected("mattpocock"):
+            if item.get("stage") != stage["id"]:
+                continue
+            mode = "显式调用" if item["invocation"] == "user" else "自动匹配或显式调用"
+            lines.append(f"| [{item['name']}](../../skills/{item['name']}/SKILL.md) | {item.get('summary', '—')} | {mode} |")
+        lines.append("")
+    lines += [
+        "## 技能依赖与项目先决条件",
+        "",
+        "这些是运行时调用依赖，不代表用户需要提前手动执行。分支使用的技能列入依赖，以便安装和移除检查保证流程完整。",
+        "",
+        "| Skill | 调用依赖 | 项目前提 |",
+        "|---|---|---|",
+    ]
+    for item in catalog.selected("mattpocock"):
+        if item.get("requires") or item.get("prerequisites"):
+            requires = ", ".join("`" + name + "`" for name in item.get("requires", [])) or "—"
+            prerequisites = "; ".join(item.get("prerequisites", [])) or "—"
+            lines.append(f"| `{item['name']}` | {requires} | {prerequisites} |")
+    lines += [
+        "",
+        "依赖 setup-matt-pocock-skills 的配置要求由项目接入文档说明；该 setup skill 未安装。",
+        "这些前置条件必须写进项目配置，skill 文件本身不改变上游发布、提交或教学产物行为。",
+        "",
+    ]
+    return "\n".join(lines)
 
 
 @transactional
 def write_catalog(catalog: Catalog, apply: bool) -> int:
-    output = render_catalog(catalog)
-    target = catalog.root / "plugins/workflow-hub/skills/workflow-guide/references/catalog.md"
+    outputs = [(catalog.root / CATALOG_PATH, render_catalog(catalog))]
+    stage_target = stage_guide_target(catalog)
+    if stage_target is not None:
+        outputs.append((stage_target, render_stage_guide(catalog)))
     if not apply:
-        print(output)
+        print(outputs[0][1])
         return 0
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(output, encoding="utf-8")
-    if catalog.skills_doc.get('stages'):
-        (catalog.root / 'plugins/vendor-mattpocock/README.md').write_text(render_stage_guide(catalog), encoding='utf-8')
-    refresh_versions(catalog)
-    print(f"updated {target.relative_to(catalog.root)}")
+    for target, text in outputs:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text, encoding="utf-8")
+        print(f"updated {target.relative_to(catalog.root)}")
     return 0
 
 
-def validate(catalog: Catalog) -> int:
-    errors: list[str] = []
+# -- validation -----------------------------------------------------------
+
+def validate_skills(catalog: Catalog, errors: list[str]) -> None:
     entries = catalog.skills_doc.get("skills", [])
     names = [item.get("name") for item in entries]
     duplicates = sorted({name for name in names if names.count(name) > 1})
     if duplicates:
         errors.append("duplicate registry names: " + ", ".join(duplicates))
-    stages = {stage['id'] for stage in catalog.skills_doc.get('stages', [])}
+    stages = {stage["id"] for stage in catalog.skills_doc.get("stages", [])}
+    groups = set(catalog.group_names())
 
     for item in entries:
-        name = item.get("name")
-        if item.get('codex') and item.get('stage') not in stages:
+        name = item.get("name") or "<unnamed>"
+        if not SKILL_NAME.match(name) or len(name) > 64:
+            errors.append(f"{name}: name must match {SKILL_NAME.pattern} and be at most 64 characters")
+        if item.get("ownership") not in OWNERSHIPS:
+            errors.append(f"{name}: unknown ownership {item.get('ownership')!r}")
+        if item.get("scope") not in SCOPES:
+            errors.append(f"{name}: unknown scope {item.get('scope')!r}")
+        if item.get("invocation") not in INVOCATIONS:
+            errors.append(f"{name}: unknown invocation {item.get('invocation')!r}")
+        if item.get("stage") and item["stage"] not in stages:
             errors.append(f"{name}: unknown stage")
-        if item.get('codex') and skill_relative_path(catalog, item).parts != (item['stage'], name):
-            errors.append(f"{name}: destination does not match stage")
-        path = catalog.root / item.get("path", "")
-        if not path.is_dir():
-            errors.append(f"{name}: missing directory {item.get('path')}")
-            continue
-        actual_name = frontmatter_name(path)
-        if actual_name != name:
-            errors.append(f"{name}: SKILL.md declares {actual_name!r}")
+        expected_path = f"{SKILLS_DIR}/{name}"
+        if item.get("path") != expected_path:
+            errors.append(f"{name}: path must be {expected_path}")
+        plugin = item.get("plugin")
+        if plugin is not None and plugin not in groups:
+            errors.append(f"{name}: unknown group {plugin}")
         for dependency in item.get("requires", []):
             if dependency not in catalog.skills:
                 errors.append(f"{name}: missing dependency {dependency}")
-        if item.get("ownership") == "vendored" and not item.get("origin"):
-            errors.append(f"{name}: vendored entry has no origin")
+        if item.get("ownership") == "vendored":
+            origin = item.get("origin") or {}
+            if not origin.get("source") or not origin.get("path"):
+                errors.append(f"{name}: vendored entry needs origin.source and origin.path")
+            elif origin["source"] not in catalog.skills_doc.get("sources", {}):
+                errors.append(f"{name}: unknown origin source {origin['source']}")
 
+        directory = catalog.root / item.get("path", "")
+        if not directory.is_dir():
+            errors.append(f"{name}: missing directory {item.get('path')}")
+            continue
+        if not (directory / "SKILL.md").is_file():
+            errors.append(f"{name}: missing SKILL.md")
+            continue
+        fields = parse_frontmatter(directory / "SKILL.md")
+        if not fields:
+            errors.append(f"{name}: SKILL.md has no YAML frontmatter")
+            continue
+        if fields.get("name") != name:
+            errors.append(f"{name}: SKILL.md declares {fields.get('name')!r}")
+        description = fields.get("description") or ""
+        if not description:
+            errors.append(f"{name}: SKILL.md needs a description")
+        elif len(description) > 1024:
+            errors.append(f"{name}: description is {len(description)} characters; the limit is 1024")
+        compatibility = fields.get("compatibility")
+        if compatibility is not None and len(compatibility) > 500:
+            errors.append(f"{name}: compatibility must be at most 500 characters")
+        declares_user_only = (fields.get("disable-model-invocation") or "").strip().lower() == "true"
+        if declares_user_only != (item.get("invocation") == "user"):
+            errors.append(
+                f"{name}: invocation {item.get('invocation')!r} disagrees with"
+                " disable-model-invocation in SKILL.md"
+            )
+
+
+def validate_workflows(catalog: Catalog, errors: list[str]) -> None:
     for workflow in catalog.workflows_doc.get("workflows", []):
         if workflow.get("entry") not in workflow.get("skills", []):
             errors.append(f"workflow {workflow.get('id')}: entry is not in skills")
         for name in workflow.get("skills", []):
             if name not in catalog.skills:
                 errors.append(f"workflow {workflow.get('id')}: unknown skill {name}")
-        members = set(workflow.get('skills', []))
-        workflow_entries = set(workflow.get('entries', [workflow.get('entry')]))
-        if not workflow_entries or not workflow_entries.issubset(members) or workflow.get('entry') not in workflow_entries:
+        members = set(workflow.get("skills", []))
+        workflow_entries = set(workflow.get("entries", [workflow.get("entry")]))
+        if not workflow_entries or not workflow_entries.issubset(members) or workflow.get("entry") not in workflow_entries:
             errors.append(f"workflow {workflow['id']}: invalid entries")
         covered = set(workflow_entries)
-        graph = {n: [] for n in members}
-        for relation in workflow.get('relations', []):
-            start, end, kind = relation.get('from'), relation.get('to'), relation.get('type')
+        graph = {name: [] for name in members}
+        for relation in workflow.get("relations", []):
+            start, end, kind = relation.get("from"), relation.get("to"), relation.get("type")
             if start not in members or end not in members or start == end:
                 errors.append(f"workflow {workflow['id']}: invalid relation endpoints")
                 continue
             covered.update((start, end))
-            if kind not in {'sequence', 'optional', 'calls', 'choice', 'alongside'}:
+            if kind not in RELATION_TYPES:
                 errors.append(f"workflow {workflow['id']}: invalid relation type")
-            if kind in {'choice', 'optional'} and not relation.get('when'):
+            if kind in {"choice", "optional"} and not relation.get("when"):
                 errors.append(f"workflow {workflow['id']}: conditional relation needs when")
-            if kind == 'sequence': graph[start].append(end)
+            if kind == "sequence":
+                graph[start].append(end)
         if covered != members:
             errors.append(f"workflow {workflow['id']}: skills missing relationships")
         visiting, visited = set(), set()
+
         def cyclic(node):
-            if node in visiting: return True
-            if node in visited: return False
+            if node in visiting:
+                return True
+            if node in visited:
+                return False
             visiting.add(node)
-            if any(cyclic(child) for child in graph[node]): return True
+            if any(cyclic(child) for child in graph[node]):
+                return True
             visiting.remove(node)
             visited.add(node)
             return False
+
         if any(cyclic(node) for node in graph):
             errors.append(f"workflow {workflow['id']}: sequence cycle")
 
-    discovered = set()
-    for pattern in ("plugins/*/skills/**/SKILL.md", ".agents/skills/*/SKILL.md"):
-        for skill_file in catalog.root.glob(pattern):
-            discovered.add(skill_file.parent.relative_to(catalog.root).as_posix())
-    registered_paths = {item["path"] for item in entries}
-    for path in sorted(discovered - registered_paths):
+
+def validate_discovery(catalog: Catalog, errors: list[str]) -> None:
+    discovered = {
+        skill_file.parent.relative_to(catalog.root).as_posix()
+        for skill_file in catalog.root.glob(f"{SKILLS_DIR}/*/SKILL.md")
+    }
+    registered = {item["path"] for item in catalog.skills_doc["skills"]}
+    for path in sorted(discovered - registered):
         errors.append(f"unregistered skill directory: {path}")
-    for path in sorted(registered_paths - discovered):
+    for path in sorted(registered - discovered):
         errors.append(f"registered path is not discoverable: {path}")
 
+
+def validate_sources(catalog: Catalog, errors: list[str]) -> None:
     for source_id, source in catalog.skills_doc.get("sources", {}).items():
         excluded_names = [item.get("name") for item in source.get("exclusions", [])]
         duplicate_exclusions = sorted({name for name in excluded_names if excluded_names.count(name) > 1})
         if duplicate_exclusions:
             errors.append(f"{source_id}: duplicate exclusions: {', '.join(duplicate_exclusions)}")
-        selected_names = {item["name"] for item in catalog.selected(source_id)}
-        overlap = sorted(selected_names.intersection(excluded_names))
+        selected = catalog.selected(source_id)
+        overlap = sorted({item["name"] for item in selected}.intersection(excluded_names))
         if overlap:
             errors.append(f"{source_id}: selected and excluded: {', '.join(overlap)}")
+        group = source.get("plugin")
+        if group not in catalog.group_names():
+            errors.append(f"{source_id}: unknown group {group}")
         lock_path = catalog.root / source["lockPath"]
         if not lock_path.is_file():
             errors.append(f"{source_id}: missing lock {source['lockPath']}")
             continue
         lock = load_json(lock_path)
         locked = {item["name"]: item for item in lock.get("skills", [])}
-        selected = catalog.selected(source_id)
         if set(locked) != {item["name"] for item in selected}:
             errors.append(f"{source_id}: lock selection differs from registry")
+        excluded_paths = tuple(lock.get("excludedPaths", VENDOR_EXCLUDED_PATHS))
         for item in selected:
-            local_path = catalog.root / item["path"]
             lock_item = locked.get(item["name"])
-            if local_path.is_dir() and lock_item:
-                original_yaml = lock_item.get('upstreamOpenaiYaml')
-                overlays = ('agents/openai.yaml',) if item.get('codex') and original_yaml is None else ()
-                overrides = {'agents/openai.yaml': original_yaml.encode('utf-8')} if original_yaml is not None else {}
-                digest = tree_digest(local_path, overlays, overrides)
-                if digest != lock_item.get("treeSha256"):
-                    errors.append(f"{item['name']}: vendored content differs from lock")
-                if item.get('codex'):
-                    overlay = local_path / 'agents/openai.yaml'
-                    if not overlay.is_file() or overlay.read_text() != codex_overlay(item):
-                        errors.append(f"{item['name']}: Codex overlay differs from registry")
-                    if tree_digest(local_path) != lock_item.get('packagedTreeSha256'):
-                        errors.append(f"{item['name']}: packaged content differs from lock")
-                    if lock_item.get('path') != item['path']:
-                        errors.append(f"{item['name']}: packaged path differs from lock")
-                skill_relative_path(catalog, item)
-        plugin_root = catalog.root / "plugins" / source["plugin"]
-        if not (plugin_root / source["licensePath"]).is_file():
-            errors.append(f"{source_id}: preserved license is missing")
-        if not (plugin_root / "THIRD_PARTY_NOTICES.md").is_file():
-            errors.append(f"{source_id}: third-party notice is missing")
+            local = catalog.root / item["path"]
+            if not local.is_dir() or not lock_item:
+                continue
+            if lock_item.get("path") != item["path"]:
+                errors.append(f"{item['name']}: locked path differs from registry")
+            if lock_item.get("sourcePath") != (item.get("origin") or {}).get("path"):
+                errors.append(f"{item['name']}: locked sourcePath differs from registry")
+            if tree_digest(local, excluded_paths) != lock_item.get("treeSha256"):
+                errors.append(f"{item['name']}: vendored content differs from lock")
+            for relative in excluded_paths:
+                if (local / relative).exists():
+                    errors.append(f"{item['name']}: vendored tree ships an excluded path ({relative})")
+        if group in catalog.group_names():
+            group_root = catalog.root / GROUPS_DIR / group
+            if not (group_root / source["licensePath"]).is_file():
+                errors.append(f"{source_id}: preserved license is missing")
+            if not (group_root / "THIRD_PARTY_NOTICES.md").is_file():
+                errors.append(f"{source_id}: third-party notice is missing")
 
-    for plugin_dir in sorted((catalog.root / "plugins").iterdir()):
-        manifest = plugin_dir / ".codex-plugin/plugin.json"
-        if not manifest.is_file():
-            errors.append(f"{plugin_dir.name}: missing plugin manifest")
+
+def validate_groups(catalog: Catalog, errors: list[str]) -> None:
+    names = catalog.group_names()
+    if not names:
+        errors.append(f"no group definitions found under {GROUPS_DIR}")
+    for group in names:
+        if not PLUGIN_NAME.match(group) or len(group) > 64:
+            errors.append(f"{group}: group name does not satisfy {PLUGIN_NAME.pattern}")
+        manifest_path = catalog.package_path(group)
+        if not manifest_path.is_file():
+            errors.append(f"{group}: missing package.json")
             continue
-        plugin = load_json(manifest)
-        if plugin.get("name") != plugin_dir.name:
-            errors.append(f"{plugin_dir.name}: manifest name mismatch")
-        if plugin.get('version') != plugin_version(plugin_dir):
-            errors.append(f'{plugin_dir.name}: stale content version; run render-catalog --apply')
+        manifest = catalog.package(group)
+        if manifest.get("name") != group:
+            errors.append(f"{group}: package.json name mismatch")
+        base = str(manifest.get("version", ""))
+        if not SEMVER.match(base.split("+")[0]):
+            errors.append(f"{group}: version must start with a semantic x.y.z release")
+        if not manifest.get("description"):
+            errors.append(f"{group}: package.json needs a description")
+        extra = sorted(set(manifest) - PLUGIN_KEYS - {"skills"})
+        if extra:
+            errors.append(f"{group}: package.json has fields outside the plugin schema: {', '.join(extra)}")
+        author = manifest.get("author")
+        if author is not None:
+            if not isinstance(author, dict) or set(author) - AUTHOR_KEYS or not author.get("name"):
+                errors.append(f"{group}: author must be an object with a name")
+        skills = manifest.get("skills")
+        if not isinstance(skills, list) or len(skills) != len(set(skills)):
+            errors.append(f"{group}: skills must be a duplicate-free list")
+        else:
+            declared, registered = set(skills), {item["name"] for item in catalog.group_skills(group)}
+            if declared != registered:
+                missing = ", ".join(sorted(registered - declared)) or "none"
+                stale = ", ".join(sorted(declared - registered)) or "none"
+                errors.append(f"{group}: package skills differ from registry (missing {missing}; stale {stale})")
+        extensions = manifest.get("extensions")
+        if extensions is not None:
+            if not isinstance(extensions, dict):
+                errors.append(f"{group}: extensions must be an object")
+            else:
+                for namespace, payload in extensions.items():
+                    if not NAMESPACE.match(namespace):
+                        errors.append(f"{group}: extension key {namespace!r} is not a reverse-domain namespace")
+                    if not isinstance(payload, dict):
+                        errors.append(f"{group}: extension {namespace!r} must be an object")
+                    elif isinstance(payload, dict) and isinstance(payload.get("icon"), str):
+                        if not (catalog.root / GROUPS_DIR / group / payload["icon"]).is_file():
+                            errors.append(f"{group}: extension icon {payload['icon']} is missing")
+        plugin = plugin_manifest(catalog, group)
+        if plugin["version"] != f"{base}+content.{packaged_digest(catalog, group)[:16]}":
+            errors.append(f"{group}: derived version is inconsistent")
+        built = catalog.root / DIST_DIR / group / "plugin.json"
+        if built.is_file() and load_json(built) != plugin:
+            errors.append(f"{group}: dist/{group}/plugin.json is stale; run build")
 
-    catalog_path = catalog.root / "plugins/workflow-hub/skills/workflow-guide/references/catalog.md"
-    stage_path = catalog.root / 'plugins/vendor-mattpocock/README.md'
-    if stages and (not stage_path.is_file() or stage_path.read_text(encoding='utf-8') != render_stage_guide(catalog)):
-        errors.append('generated Matt stage guide is stale; run render-catalog --apply')
+
+def validate_generated(catalog: Catalog, errors: list[str]) -> None:
+    catalog_path = catalog.root / CATALOG_PATH
     if not catalog_path.is_file() or catalog_path.read_text(encoding="utf-8") != render_catalog(catalog):
         errors.append("generated workflow catalog is stale; run render-catalog --apply")
+    stage_target = stage_guide_target(catalog)
+    if stage_target is not None:
+        if not stage_target.is_file() or stage_target.read_text(encoding="utf-8") != render_stage_guide(catalog):
+            errors.append("generated stage guide is stale; run render-catalog --apply")
 
+
+def validate(catalog: Catalog) -> int:
+    errors: list[str] = []
+    validate_skills(catalog, errors)
+    validate_workflows(catalog, errors)
+    validate_discovery(catalog, errors)
+    validate_sources(catalog, errors)
+    validate_groups(catalog, errors)
+    validate_generated(catalog, errors)
     if errors:
         for error in errors:
             print(f"ERROR: {error}")
         return 1
-    print(f"OK: {len(entries)} skills and {len(catalog.workflows_doc['workflows'])} workflows validated")
+    print(f"OK: {len(catalog.skills_doc.get('skills', []))} skills and"
+          f" {len(catalog.workflows_doc['workflows'])} workflows validated")
     return 0
 
+
+# -- inventory and upstream maintenance -----------------------------------
 
 def inventory(catalog: Catalog, as_json: bool) -> int:
     if as_json:
         print(json.dumps(catalog.skills_doc["skills"], indent=2, ensure_ascii=False))
         return 0
-    print(f"{'SKILL':32} {'OWNER':9} {'CALL':6} LOCATION")
+    print(f"{'SKILL':32} {'GROUP':18} {'OWNER':9} {'CALL':6} LOCATION")
     for item in sorted(catalog.skills_doc["skills"], key=lambda value: value["name"]):
-        print(f"{item['name']:32} {item['ownership']:9} {item['invocation']:6} {item['path']}")
+        print(f"{item['name']:32} {item.get('plugin') or '—':18} {item['ownership']:9}"
+              f" {item['invocation']:6} {item['path']}")
     return 0
 
 
@@ -421,6 +682,22 @@ def checkout_source(source: dict, ref: str, destination: Path) -> tuple[str, str
     return commit, committed_at
 
 
+def swap_directory(staging: Path, target: Path, backup: Path) -> None:
+    try:
+        if target.exists():
+            os.replace(target, backup)
+        os.replace(staging, target)
+    except Exception:
+        if target.exists():
+            shutil.rmtree(target)
+        if backup.exists():
+            os.replace(backup, target)
+        raise
+    else:
+        if backup.exists():
+            shutil.rmtree(backup)
+
+
 @transactional
 def sync_vendor(catalog: Catalog, source_id: str, ref: str | None, apply: bool) -> int:
     source = catalog.source(source_id)
@@ -433,37 +710,41 @@ def sync_vendor(catalog: Catalog, source_id: str, ref: str | None, apply: bool) 
         commit, committed_at = checkout_source(source, requested_ref, checkout)
         stage = Path(temporary) / "skills"
         stage.mkdir()
-        lock_skills = []
-        changed = []
+        excluded_paths = tuple(source.get("excludedPaths", VENDOR_EXCLUDED_PATHS))
+        lock_skills, changed = [], []
         for item in sorted(selected, key=lambda value: value["name"]):
             source_path = checkout / item["origin"]["path"]
             if not source_path.is_dir():
                 raise RuntimeError(f"upstream path missing: {item['origin']['path']}")
             if frontmatter_name(source_path) != item["name"]:
                 raise RuntimeError(f"upstream name mismatch for {item['name']}")
-            destination = stage / skill_relative_path(catalog, item)
-            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination = stage / item["name"]
             shutil.copytree(source_path, destination)
+            upstream_digest = tree_digest(destination)
+            removed = []
+            for relative in excluded_paths:
+                target = destination / relative
+                if target.is_file():
+                    target.unlink()
+                    removed.append(relative)
+            for directory in sorted((p for p in destination.rglob("*") if p.is_dir()),
+                                    key=lambda p: len(p.parts), reverse=True):
+                if not any(directory.iterdir()):
+                    directory.rmdir()
             digest = tree_digest(destination)
-            original_yaml = None
-            if item.get('codex'):
-                overlay = destination / 'agents/openai.yaml'
-                if overlay.exists():
-                    original_yaml = overlay.read_text(encoding='utf-8')
-                overlay.parent.mkdir(exist_ok=True)
-                overlay.write_text(codex_overlay(item), encoding='utf-8')
-            packaged_digest = tree_digest(destination)
             local = catalog.root / item["path"]
-            if not local.is_dir() or tree_digest(local) != packaged_digest:
+            if not local.is_dir() or tree_digest(local, excluded_paths) != digest:
                 changed.append(item["name"])
             lock_skills.append({
                 "name": item["name"],
                 "sourcePath": item["origin"]["path"],
+                "path": item["path"],
                 "treeSha256": digest,
-                "packagedTreeSha256": packaged_digest,
-                "path": item['path'],
-                "upstreamOpenaiYaml": original_yaml,
+                "upstreamTreeSha256": upstream_digest,
+                "excludedPaths": list(excluded_paths),
             })
+            if removed != list(excluded_paths):
+                print(f"note: {item['name']} upstream excluded paths removed: {removed}")
 
         license_source = checkout / source["licensePath"]
         if not license_source.is_file():
@@ -472,31 +753,20 @@ def sync_vendor(catalog: Catalog, source_id: str, ref: str | None, apply: bool) 
         print(f"commit:  {commit}")
         print("changed: " + (", ".join(changed) if changed else "none"))
         if not apply:
-            print("dry run; pass --apply to replace the selected vendored tree")
+            print("dry run; pass --apply to replace the selected vendored skills")
             return 0
 
-        plugin_root = catalog.root / "plugins" / source["plugin"]
-        target = plugin_root / "skills"
-        staging = plugin_root / f".skills-staging-{uuid.uuid4().hex}"
-        backup = plugin_root / f".skills-backup-{uuid.uuid4().hex}"
-        shutil.copytree(stage, staging)
-        try:
-            if target.exists():
-                os.replace(target, backup)
-            os.replace(staging, target)
-        except Exception:
-            if target.exists():
-                shutil.rmtree(target)
-            if backup.exists():
-                os.replace(backup, target)
-            raise
-        else:
-            if backup.exists():
-                shutil.rmtree(backup)
+        skills_root = catalog.root / SKILLS_DIR
+        for item in sorted(selected, key=lambda value: value["name"]):
+            staging = skills_root / f".{item['name']}.{uuid.uuid4().hex}.staging"
+            backup = skills_root / f".{item['name']}.{uuid.uuid4().hex}.backup"
+            shutil.copytree(stage / item["name"], staging)
+            swap_directory(staging, skills_root / item["name"], backup)
 
-        shutil.copy2(license_source, plugin_root / source["licensePath"])
+        group_root = catalog.root / GROUPS_DIR / source["plugin"]
+        shutil.copy2(license_source, group_root / source["licensePath"])
         lock = {
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "source": source_id,
             "repository": source["repository"],
             "branch": source["branch"],
@@ -504,6 +774,7 @@ def sync_vendor(catalog: Catalog, source_id: str, ref: str | None, apply: bool) 
             "committedAt": committed_at,
             "license": source["license"],
             "licensePath": source["licensePath"],
+            "excludedPaths": list(excluded_paths),
             "skills": lock_skills,
         }
         atomic_json(catalog.root / source["lockPath"], lock)
@@ -538,41 +809,101 @@ def remove_skill(catalog: Catalog, name: str, apply: bool) -> int:
         return 0
 
     target = (catalog.root / item["path"]).resolve()
-    expected_parent = (catalog.root / "plugins" / item["plugin"] / "skills").resolve()
+    expected_parent = (catalog.root / SKILLS_DIR).resolve()
     if not target.is_relative_to(expected_parent) or target == expected_parent or target.name != name:
-        raise RuntimeError("refusing removal outside the owning plugin skills directory")
+        raise RuntimeError("refusing removal outside the shared skills directory")
     shutil.rmtree(target)
+
     catalog.skills_doc["skills"] = [entry for entry in catalog.skills_doc["skills"] if entry["name"] != name]
+    del catalog.skills[name]
     catalog.save_skills()
+
+    group = item.get("plugin")
+    if group and catalog.package_path(group).is_file():
+        manifest = catalog.package(group)
+        manifest["skills"] = [entry for entry in manifest.get("skills", []) if entry != name]
+        catalog.save_package(group, manifest)
+
     source = catalog.source(item["origin"]["source"])
     lock_path = catalog.root / source["lockPath"]
     lock = load_json(lock_path)
     lock["skills"] = [entry for entry in lock["skills"] if entry["name"] != name]
     atomic_json(lock_path, lock)
+
     write_catalog(catalog, True)
     print("removed; tracked content remains recoverable from Git")
     return 0
 
 
+# -- package build --------------------------------------------------------
+
+def package_stale(catalog: Catalog, group: str) -> bool:
+    root = catalog.root / DIST_DIR / group
+    manifest = root / "plugin.json"
+    if not manifest.is_file() or load_json(manifest) != plugin_manifest(catalog, group):
+        return True
+    for item in catalog.group_skills(group):
+        built = root / "skills" / item["name"]
+        if not built.is_dir() or tree_digest(built) != tree_digest(catalog.root / item["path"]):
+            return True
+    return False
+
+
+def build(catalog: Catalog, group: str | None, check: bool) -> int:
+    names = [group] if group else catalog.group_names()
+    for name in names:
+        if name not in catalog.group_names():
+            raise ValueError(f"unknown group: {name}")
+    stale = [name for name in names if package_stale(catalog, name)]
+    if check:
+        if stale:
+            print("stale packages: " + ", ".join(stale))
+            print("run: skill_manager.py build")
+            return 1
+        print(f"OK: {len(names)} package(s) up to date")
+        return 0
+
+    destination = catalog.root / DIST_DIR
+    destination.mkdir(parents=True, exist_ok=True)
+    for name in names:
+        staging = destination / f".{name}.{uuid.uuid4().hex}.staging"
+        backup = destination / f".{name}.{uuid.uuid4().hex}.backup"
+        shutil.copytree(
+            catalog.root / GROUPS_DIR / name, staging,
+            ignore=shutil.ignore_patterns(*PACKAGE_EXCLUDED_NAMES),
+        )
+        skills_root = staging / "skills"
+        skills_root.mkdir()
+        for item in catalog.group_skills(name):
+            shutil.copytree(catalog.root / item["path"], skills_root / item["name"])
+        atomic_json(staging / "plugin.json", plugin_manifest(catalog, name))
+        swap_directory(staging, destination / name, backup)
+        print(f"built {DIST_DIR}/{name}")
+    return 0
+
+
 def parser() -> argparse.ArgumentParser:
-    root = argparse.ArgumentParser(description=__doc__)
+    root = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     root.add_argument("--repo", type=Path, default=DEFAULT_ROOT)
     commands = root.add_subparsers(dest="command", required=True)
     inventory_parser = commands.add_parser("inventory")
     inventory_parser.add_argument("--json", action="store_true")
     commands.add_parser("validate")
-    doctor_parser = commands.add_parser('doctor')
-    doctor_parser.add_argument('--project', type=Path, required=True)
+    build_parser = commands.add_parser("build")
+    build_parser.add_argument("--group")
+    build_parser.add_argument("--check", action="store_true")
+    doctor_parser = commands.add_parser("doctor")
+    doctor_parser.add_argument("--project", type=Path, required=True)
     selection = doctor_parser.add_mutually_exclusive_group()
-    selection.add_argument('--skill')
-    selection.add_argument('--workflow')
-    doctor_parser.add_argument('--spec')
-    doctor_parser.add_argument('--json', action='store_true')
+    selection.add_argument("--skill")
+    selection.add_argument("--workflow")
+    doctor_parser.add_argument("--spec")
+    doctor_parser.add_argument("--json", action="store_true")
     render_parser = commands.add_parser("render-catalog")
     render_parser.add_argument("--apply", action="store_true")
     check_parser = commands.add_parser("check-upstream")
     check_parser.add_argument("--source", required=True)
-    check_parser.add_argument('--require-current', action='store_true')
+    check_parser.add_argument("--require-current", action="store_true")
     sync_parser = commands.add_parser("sync-vendor")
     sync_parser.add_argument("--source", required=True)
     sync_parser.add_argument("--ref")
@@ -591,7 +922,9 @@ def main() -> int:
             return inventory(catalog, args.json)
         if args.command == "validate":
             return validate(catalog)
-        if args.command == 'doctor':
+        if args.command == "build":
+            return build(catalog, args.group, args.check)
+        if args.command == "doctor":
             from project_doctor import doctor
             return doctor(catalog, args.project, args.skill, args.workflow, args.spec, args.json)
         if args.command == "render-catalog":

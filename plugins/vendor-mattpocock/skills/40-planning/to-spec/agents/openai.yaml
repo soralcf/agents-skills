@@ -1,6 +1,0 @@
-interface:
-  display_name: "to-spec"
-  short_description: "将已有讨论整理成规格并发布到任务载体"
-  default_prompt: "Use $vendor-mattpocock:to-spec for this task."
-policy:
-  allow_implicit_invocation: false

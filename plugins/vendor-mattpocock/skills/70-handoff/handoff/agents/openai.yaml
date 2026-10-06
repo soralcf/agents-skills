@@ -1,6 +1,0 @@
-interface:
-  display_name: "handoff"
-  short_description: "生成可交给后续 agent 的上下文摘要"
-  default_prompt: "Use $vendor-mattpocock:handoff for this task."
-policy:
-  allow_implicit_invocation: false

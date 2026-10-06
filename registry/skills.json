@@ -7,7 +7,7 @@
       "license": "MIT",
       "licensePath": "LICENSE",
       "plugin": "vendor-mattpocock",
-      "lockPath": "plugins/vendor-mattpocock/UPSTREAM.lock.json",
+      "lockPath": ".agents/plugins/vendor-mattpocock/UPSTREAM.lock.json",
       "exclusions": [
         {
           "name": "ask-matt",
@@ -30,7 +30,7 @@
       "scope": "plugin",
       "invocation": "model",
       "status": "active",
-      "path": "plugins/learn-anything/skills/learn-anything",
+      "path": ".agents/skills/learn-anything",
       "requires": []
     },
     {
@@ -40,7 +40,7 @@
       "scope": "plugin",
       "invocation": "user",
       "status": "active",
-      "path": "plugins/workflow-hub/skills/workflow-guide",
+      "path": ".agents/skills/workflow-guide",
       "requires": []
     },
     {
@@ -55,503 +55,434 @@
     },
     {
       "name": "teach",
+      "summary": "持续教学：学习目标、资源、课程与学习记录",
       "plugin": "vendor-mattpocock",
       "ownership": "vendored",
       "scope": "plugin",
       "invocation": "user",
       "status": "active",
       "stage": "00-learning",
-      "path": "plugins/vendor-mattpocock/skills/00-learning/teach",
+      "path": ".agents/skills/teach",
+      "requires": [],
+      "prerequisites": [
+        "A writable learning workspace for mission, resources, lessons, assets and learning records"
+      ],
       "origin": {
         "source": "mattpocock",
         "path": "skills/productivity/teach"
-      },
-      "requires": [],
-      "codex": {
-        "displayName": "teach",
-        "shortDescription": "持续教学：学习目标、资源、课程与学习记录"
-      },
-      "prerequisites": [
-        "A writable learning workspace for mission, resources, lessons, assets and learning records"
-      ]
+      }
     },
     {
       "name": "wait-what",
+      "summary": "补充背景并用项目术语重新解释",
       "plugin": "vendor-mattpocock",
       "ownership": "vendored",
       "scope": "plugin",
       "invocation": "user",
       "status": "active",
       "stage": "00-learning",
-      "path": "plugins/vendor-mattpocock/skills/00-learning/wait-what",
+      "path": ".agents/skills/wait-what",
+      "requires": [],
+      "prerequisites": [],
       "origin": {
         "source": "mattpocock",
         "path": "skills/productivity/wait-what"
-      },
-      "requires": [],
-      "codex": {
-        "displayName": "wait-what",
-        "shortDescription": "补充背景并用项目术语重新解释"
-      },
-      "prerequisites": []
+      }
     },
     {
       "name": "research",
+      "summary": "查阅一手资料并形成有来源的研究记录",
       "plugin": "vendor-mattpocock",
       "ownership": "vendored",
       "scope": "plugin",
       "invocation": "model",
       "status": "active",
       "stage": "10-discovery",
-      "path": "plugins/vendor-mattpocock/skills/10-discovery/research",
+      "path": ".agents/skills/research",
+      "requires": [],
+      "prerequisites": [],
       "origin": {
         "source": "mattpocock",
         "path": "skills/engineering/research"
-      },
-      "requires": [],
-      "codex": {
-        "displayName": "research",
-        "shortDescription": "查阅一手资料并形成有来源的研究记录"
-      },
-      "prerequisites": []
+      }
     },
     {
       "name": "triage",
+      "summary": "验证请求并整理可执行的任务说明",
       "plugin": "vendor-mattpocock",
       "ownership": "vendored",
       "scope": "plugin",
       "invocation": "user",
       "status": "active",
       "stage": "10-discovery",
-      "path": "plugins/vendor-mattpocock/skills/10-discovery/triage",
-      "origin": {
-        "source": "mattpocock",
-        "path": "skills/engineering/triage"
-      },
+      "path": ".agents/skills/triage",
       "requires": [
         "grilling",
         "domain-modeling"
       ],
-      "codex": {
-        "displayName": "triage",
-        "shortDescription": "验证请求并整理可执行的任务说明"
-      },
       "prerequisites": [
         "Project issue-tracker configuration; see PROJECT-SETUP.md",
         "Project domain glossary and applicable ADRs"
-      ]
+      ],
+      "origin": {
+        "source": "mattpocock",
+        "path": "skills/engineering/triage"
+      }
     },
     {
       "name": "diagnosing-bugs",
+      "summary": "复现故障、定位原因并建立可靠反馈环",
       "plugin": "vendor-mattpocock",
       "ownership": "vendored",
       "scope": "plugin",
       "invocation": "model",
       "status": "active",
       "stage": "10-discovery",
-      "path": "plugins/vendor-mattpocock/skills/10-discovery/diagnosing-bugs",
+      "path": ".agents/skills/diagnosing-bugs",
+      "requires": [],
+      "prerequisites": [],
       "origin": {
         "source": "mattpocock",
         "path": "skills/engineering/diagnosing-bugs"
-      },
-      "requires": [],
-      "codex": {
-        "displayName": "diagnosing-bugs",
-        "shortDescription": "复现故障、定位原因并建立可靠反馈环"
-      },
-      "prerequisites": []
+      }
     },
     {
       "name": "wayfinder",
+      "summary": "维护跨会话决策地图，逐步消除不确定性",
       "plugin": "vendor-mattpocock",
       "ownership": "vendored",
       "scope": "plugin",
       "invocation": "user",
       "status": "active",
       "stage": "20-clarification",
-      "path": "plugins/vendor-mattpocock/skills/20-clarification/wayfinder",
-      "origin": {
-        "source": "mattpocock",
-        "path": "skills/engineering/wayfinder"
-      },
+      "path": ".agents/skills/wayfinder",
       "requires": [
         "grilling",
         "domain-modeling",
         "research",
         "prototype"
       ],
-      "codex": {
-        "displayName": "wayfinder",
-        "shortDescription": "维护跨会话决策地图，逐步消除不确定性"
-      },
       "prerequisites": [
         "Project issue-tracker configuration; see PROJECT-SETUP.md",
         "Project domain glossary and applicable ADRs"
-      ]
+      ],
+      "origin": {
+        "source": "mattpocock",
+        "path": "skills/engineering/wayfinder"
+      }
     },
     {
       "name": "grilling",
+      "summary": "通过逐轮提问澄清方案与关键决策",
       "plugin": "vendor-mattpocock",
       "ownership": "vendored",
       "scope": "plugin",
       "invocation": "model",
       "status": "active",
       "stage": "20-clarification",
-      "path": "plugins/vendor-mattpocock/skills/20-clarification/grilling",
+      "path": ".agents/skills/grilling",
+      "requires": [],
+      "prerequisites": [],
       "origin": {
         "source": "mattpocock",
         "path": "skills/productivity/grilling"
-      },
-      "requires": [],
-      "codex": {
-        "displayName": "grilling",
-        "shortDescription": "通过逐轮提问澄清方案与关键决策"
-      },
-      "prerequisites": []
+      }
     },
     {
       "name": "grill-me",
+      "summary": "进入 grilling 的显式提问入口",
       "plugin": "vendor-mattpocock",
       "ownership": "vendored",
       "scope": "plugin",
       "invocation": "user",
       "status": "active",
       "stage": "20-clarification",
-      "path": "plugins/vendor-mattpocock/skills/20-clarification/grill-me",
-      "origin": {
-        "source": "mattpocock",
-        "path": "skills/productivity/grill-me"
-      },
+      "path": ".agents/skills/grill-me",
       "requires": [
         "grilling"
       ],
-      "codex": {
-        "displayName": "grill-me",
-        "shortDescription": "进入 grilling 的显式提问入口"
-      },
-      "prerequisites": []
+      "prerequisites": [],
+      "origin": {
+        "source": "mattpocock",
+        "path": "skills/productivity/grill-me"
+      }
     },
     {
       "name": "grill-with-docs",
+      "summary": "澄清设计并同步沉淀术语和架构决定",
       "plugin": "vendor-mattpocock",
       "ownership": "vendored",
       "scope": "plugin",
       "invocation": "user",
       "status": "active",
       "stage": "20-clarification",
-      "path": "plugins/vendor-mattpocock/skills/20-clarification/grill-with-docs",
-      "origin": {
-        "source": "mattpocock",
-        "path": "skills/engineering/grill-with-docs"
-      },
+      "path": ".agents/skills/grill-with-docs",
       "requires": [
         "grilling",
         "domain-modeling"
       ],
-      "codex": {
-        "displayName": "grill-with-docs",
-        "shortDescription": "澄清设计并同步沉淀术语和架构决定"
-      },
-      "prerequisites": []
+      "prerequisites": [],
+      "origin": {
+        "source": "mattpocock",
+        "path": "skills/engineering/grill-with-docs"
+      }
     },
     {
       "name": "to-questionnaire",
+      "summary": "为掌握缺失信息的人生成异步问卷",
       "plugin": "vendor-mattpocock",
       "ownership": "vendored",
       "scope": "plugin",
       "invocation": "user",
       "status": "active",
       "stage": "20-clarification",
-      "path": "plugins/vendor-mattpocock/skills/20-clarification/to-questionnaire",
+      "path": ".agents/skills/to-questionnaire",
+      "requires": [],
+      "prerequisites": [],
       "origin": {
         "source": "mattpocock",
         "path": "skills/productivity/to-questionnaire"
-      },
-      "requires": [],
-      "codex": {
-        "displayName": "to-questionnaire",
-        "shortDescription": "为掌握缺失信息的人生成异步问卷"
-      },
-      "prerequisites": []
+      }
     },
     {
       "name": "domain-modeling",
+      "summary": "维护领域术语、上下文与架构决策记录",
       "plugin": "vendor-mattpocock",
       "ownership": "vendored",
       "scope": "plugin",
       "invocation": "model",
       "status": "active",
       "stage": "30-design",
-      "path": "plugins/vendor-mattpocock/skills/30-design/domain-modeling",
+      "path": ".agents/skills/domain-modeling",
+      "requires": [],
+      "prerequisites": [],
       "origin": {
         "source": "mattpocock",
         "path": "skills/engineering/domain-modeling"
-      },
-      "requires": [],
-      "codex": {
-        "displayName": "domain-modeling",
-        "shortDescription": "维护领域术语、上下文与架构决策记录"
-      },
-      "prerequisites": []
+      }
     },
     {
       "name": "codebase-design",
+      "summary": "设计深模块、接口与可测试的边界",
       "plugin": "vendor-mattpocock",
       "ownership": "vendored",
       "scope": "plugin",
       "invocation": "model",
       "status": "active",
       "stage": "30-design",
-      "path": "plugins/vendor-mattpocock/skills/30-design/codebase-design",
+      "path": ".agents/skills/codebase-design",
+      "requires": [],
+      "prerequisites": [],
       "origin": {
         "source": "mattpocock",
         "path": "skills/engineering/codebase-design"
-      },
-      "requires": [],
-      "codex": {
-        "displayName": "codebase-design",
-        "shortDescription": "设计深模块、接口与可测试的边界"
-      },
-      "prerequisites": []
+      }
     },
     {
       "name": "improve-codebase-architecture",
+      "summary": "探索架构改进候选并展示前后对比",
       "plugin": "vendor-mattpocock",
       "ownership": "vendored",
       "scope": "plugin",
       "invocation": "user",
       "status": "active",
       "stage": "30-design",
-      "path": "plugins/vendor-mattpocock/skills/30-design/improve-codebase-architecture",
-      "origin": {
-        "source": "mattpocock",
-        "path": "skills/engineering/improve-codebase-architecture"
-      },
+      "path": ".agents/skills/improve-codebase-architecture",
       "requires": [
         "codebase-design",
         "grilling",
         "domain-modeling"
       ],
-      "codex": {
-        "displayName": "improve-codebase-architecture",
-        "shortDescription": "探索架构改进候选并展示前后对比"
-      },
-      "prerequisites": []
+      "prerequisites": [],
+      "origin": {
+        "source": "mattpocock",
+        "path": "skills/engineering/improve-codebase-architecture"
+      }
     },
     {
       "name": "prototype",
+      "summary": "用可丢弃原型验证设计问题",
       "plugin": "vendor-mattpocock",
       "ownership": "vendored",
       "scope": "plugin",
       "invocation": "model",
       "status": "active",
       "stage": "30-design",
-      "path": "plugins/vendor-mattpocock/skills/30-design/prototype",
+      "path": ".agents/skills/prototype",
+      "requires": [],
+      "prerequisites": [],
       "origin": {
         "source": "mattpocock",
         "path": "skills/engineering/prototype"
-      },
-      "requires": [],
-      "codex": {
-        "displayName": "prototype",
-        "shortDescription": "用可丢弃原型验证设计问题"
-      },
-      "prerequisites": []
+      }
     },
     {
       "name": "to-spec",
+      "summary": "将已有讨论整理成规格并发布到任务载体",
       "plugin": "vendor-mattpocock",
       "ownership": "vendored",
       "scope": "plugin",
       "invocation": "user",
       "status": "active",
       "stage": "40-planning",
-      "path": "plugins/vendor-mattpocock/skills/40-planning/to-spec",
+      "path": ".agents/skills/to-spec",
+      "requires": [],
+      "prerequisites": [
+        "Project issue-tracker configuration; see PROJECT-SETUP.md",
+        "Project domain glossary and applicable ADRs"
+      ],
       "origin": {
         "source": "mattpocock",
         "path": "skills/engineering/to-spec"
-      },
-      "requires": [],
-      "codex": {
-        "displayName": "to-spec",
-        "shortDescription": "将已有讨论整理成规格并发布到任务载体"
-      },
-      "prerequisites": [
-        "Project issue-tracker configuration; see PROJECT-SETUP.md",
-        "Project domain glossary and applicable ADRs"
-      ]
+      }
     },
     {
       "name": "to-tickets",
+      "summary": "将规格拆成可验证的纵向切片与依赖图",
       "plugin": "vendor-mattpocock",
       "ownership": "vendored",
       "scope": "plugin",
       "invocation": "user",
       "status": "active",
       "stage": "40-planning",
-      "path": "plugins/vendor-mattpocock/skills/40-planning/to-tickets",
-      "origin": {
-        "source": "mattpocock",
-        "path": "skills/engineering/to-tickets"
-      },
+      "path": ".agents/skills/to-tickets",
       "requires": [],
-      "codex": {
-        "displayName": "to-tickets",
-        "shortDescription": "将规格拆成可验证的纵向切片与依赖图"
-      },
       "prerequisites": [
         "Project issue-tracker configuration; see PROJECT-SETUP.md",
         "Project domain glossary and applicable ADRs"
-      ]
+      ],
+      "origin": {
+        "source": "mattpocock",
+        "path": "skills/engineering/to-tickets"
+      }
     },
     {
       "name": "implement",
+      "summary": "依据规格或任务实现、检查、审查并提交",
       "plugin": "vendor-mattpocock",
       "ownership": "vendored",
       "scope": "plugin",
       "invocation": "user",
       "status": "active",
       "stage": "50-implementation",
-      "path": "plugins/vendor-mattpocock/skills/50-implementation/implement",
-      "origin": {
-        "source": "mattpocock",
-        "path": "skills/engineering/implement"
-      },
+      "path": ".agents/skills/implement",
       "requires": [
         "tdd",
         "code-review"
       ],
-      "codex": {
-        "displayName": "implement",
-        "shortDescription": "依据规格或任务实现、检查、审查并提交"
-      },
       "prerequisites": [
         "An implementation spec or tickets",
         "Project checks and authorized commit scope"
-      ]
+      ],
+      "origin": {
+        "source": "mattpocock",
+        "path": "skills/engineering/implement"
+      }
     },
     {
       "name": "tdd",
+      "summary": "通过红绿重构建立行为测试与实现闭环",
       "plugin": "vendor-mattpocock",
       "ownership": "vendored",
       "scope": "plugin",
       "invocation": "model",
       "status": "active",
       "stage": "50-implementation",
-      "path": "plugins/vendor-mattpocock/skills/50-implementation/tdd",
+      "path": ".agents/skills/tdd",
+      "requires": [],
+      "prerequisites": [],
       "origin": {
         "source": "mattpocock",
         "path": "skills/engineering/tdd"
-      },
-      "requires": [],
-      "codex": {
-        "displayName": "tdd",
-        "shortDescription": "通过红绿重构建立行为测试与实现闭环"
-      },
-      "prerequisites": []
+      }
     },
     {
       "name": "code-review",
+      "summary": "分别审查项目规范与规格符合度",
       "plugin": "vendor-mattpocock",
       "ownership": "vendored",
       "scope": "plugin",
       "invocation": "model",
       "status": "active",
       "stage": "60-review-integration",
-      "path": "plugins/vendor-mattpocock/skills/60-review-integration/code-review",
-      "origin": {
-        "source": "mattpocock",
-        "path": "skills/engineering/code-review"
-      },
+      "path": ".agents/skills/code-review",
       "requires": [],
-      "codex": {
-        "displayName": "code-review",
-        "shortDescription": "分别审查项目规范与规格符合度"
-      },
       "prerequisites": [
         "Project issue-tracker configuration; see PROJECT-SETUP.md",
         "Project domain glossary and applicable ADRs"
-      ]
+      ],
+      "origin": {
+        "source": "mattpocock",
+        "path": "skills/engineering/code-review"
+      }
     },
     {
       "name": "resolving-merge-conflicts",
+      "summary": "按双方意图解决合并与变基冲突",
       "plugin": "vendor-mattpocock",
       "ownership": "vendored",
       "scope": "plugin",
       "invocation": "model",
       "status": "active",
       "stage": "60-review-integration",
-      "path": "plugins/vendor-mattpocock/skills/60-review-integration/resolving-merge-conflicts",
+      "path": ".agents/skills/resolving-merge-conflicts",
+      "requires": [],
+      "prerequisites": [],
       "origin": {
         "source": "mattpocock",
         "path": "skills/engineering/resolving-merge-conflicts"
-      },
-      "requires": [],
-      "codex": {
-        "displayName": "resolving-merge-conflicts",
-        "shortDescription": "按双方意图解决合并与变基冲突"
-      },
-      "prerequisites": []
+      }
     },
     {
       "name": "handoff",
+      "summary": "生成可交给后续 agent 的上下文摘要",
       "plugin": "vendor-mattpocock",
       "ownership": "vendored",
       "scope": "plugin",
       "invocation": "user",
       "status": "active",
       "stage": "70-handoff",
-      "path": "plugins/vendor-mattpocock/skills/70-handoff/handoff",
+      "path": ".agents/skills/handoff",
+      "requires": [],
+      "prerequisites": [],
       "origin": {
         "source": "mattpocock",
         "path": "skills/productivity/handoff"
-      },
-      "requires": [],
-      "codex": {
-        "displayName": "handoff",
-        "shortDescription": "生成可交给后续 agent 的上下文摘要"
-      },
-      "prerequisites": []
+      }
     },
     {
       "name": "wizard",
+      "summary": "为必须由人完成的操作生成交互向导",
       "plugin": "vendor-mattpocock",
       "ownership": "vendored",
       "scope": "plugin",
       "invocation": "model",
       "status": "active",
       "stage": "70-handoff",
-      "path": "plugins/vendor-mattpocock/skills/70-handoff/wizard",
+      "path": ".agents/skills/wizard",
+      "requires": [],
+      "prerequisites": [],
       "origin": {
         "source": "mattpocock",
         "path": "skills/engineering/wizard"
-      },
-      "requires": [],
-      "codex": {
-        "displayName": "wizard",
-        "shortDescription": "为必须由人完成的操作生成交互向导"
-      },
-      "prerequisites": []
+      }
     },
     {
       "name": "writing-for-agents",
+      "summary": "改善 agent 文档的触发条件、结构与完成标准",
       "plugin": "vendor-mattpocock",
       "ownership": "vendored",
       "scope": "plugin",
       "invocation": "model",
       "status": "active",
       "stage": "90-agent-authoring",
-      "path": "plugins/vendor-mattpocock/skills/90-agent-authoring/writing-for-agents",
+      "path": ".agents/skills/writing-for-agents",
+      "requires": [],
+      "prerequisites": [],
       "origin": {
         "source": "mattpocock",
         "path": "skills/productivity/writing-for-agents"
-      },
-      "requires": [],
-      "codex": {
-        "displayName": "writing-for-agents",
-        "shortDescription": "改善 agent 文档的触发条件、结构与完成标准"
-      },
-      "prerequisites": []
+      }
     }
   ],
   "stages": [

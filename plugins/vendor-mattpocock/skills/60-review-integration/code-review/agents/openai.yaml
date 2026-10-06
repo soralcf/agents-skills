@@ -1,6 +1,0 @@
-interface:
-  display_name: "code-review"
-  short_description: "分别审查项目规范与规格符合度"
-  default_prompt: "Use $vendor-mattpocock:code-review for this task."
-policy:
-  allow_implicit_invocation: true

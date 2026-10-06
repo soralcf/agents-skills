@@ -1,6 +1,0 @@
-interface:
-  display_name: "tdd"
-  short_description: "通过红绿重构建立行为测试与实现闭环"
-  default_prompt: "Use $vendor-mattpocock:tdd for this task."
-policy:
-  allow_implicit_invocation: true
